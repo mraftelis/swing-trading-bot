@@ -1,0 +1,9 @@
+pandas
+yfinance
+tqdm
+transformers
+sentence-transformers
+numpy
+python-dotenv
+requests
+streamlit
