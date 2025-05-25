@@ -6,8 +6,8 @@ load_dotenv()
 
 def send_pushover_alert(title, message):
     payload = {
-        "token": os.getenv("PUSHOVER_API_TOKEN"),
-        "user": os.getenv("PUSHOVER_USER_KEY"),
+        "token": os.getenv("PUSHOVER_TOKEN"),
+        "user": os.getenv("PUSHOVER_USER"),
         "title": title,
         "message": message
     }

@@ -8,7 +8,7 @@ from tqdm import tqdm
 from transformers import pipeline
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
-# from notify import send_pushover_alert  # Disabled for debugging
+from notify import send_pushover_alert
 
 # Load environment variables
 load_dotenv()
@@ -72,7 +72,7 @@ def get_news_sentiment_and_embedding(ticker, date):
     try:
         response = requests.get(url)
         articles = response.json().get('articles', [])
-        headlines = [str(a['title']) for a in articles if a.get('title')]
+        headlines = [a['title'] for a in articles if a.get('title')]
     except Exception as e:
         print(f"API error for {ticker} on {query_date}: {e}")
         return 0, np.zeros(384)
@@ -81,24 +81,35 @@ def get_news_sentiment_and_embedding(ticker, date):
         print(f"No headlines for {ticker} on {query_date}")
         return 0, np.zeros(384)
 
+    # ✅ Sanitize: flatten and convert everything to strings
+    flat_headlines = []
+    for h in headlines:
+        if isinstance(h, str):
+            flat_headlines.append(h)
+        elif isinstance(h, list):
+            flat_headlines.extend([str(x) for x in h])
+        else:
+            flat_headlines.append(str(h))
+
+    print(f"HEADLINE TYPES: {[type(h) for h in flat_headlines]}")
+    print(f"HEADLINE EXAMPLE: {flat_headlines[:3]}")
+
     try:
-        embeddings = embedding_model.encode(headlines)
+        embeddings = embedding_model.encode(flat_headlines)
         embeddings = np.array(embeddings)
 
-        print(f"✅ Raw embeddings shape: {embeddings.shape}")
+        print(f"Raw embedding shape: {embeddings.shape}")
 
         if embeddings.ndim != 2 or embeddings.shape[1] != 384:
-            print(f"❌ Invalid embedding shape BEFORE MEAN: {embeddings.shape}")
-            return 0, np.zeros(384)
+            raise ValueError(f"Invalid shape {embeddings.shape}")
 
         avg_embedding = embeddings.mean(axis=0)
-
     except Exception as e:
-        print(f"❌ Embedding exception for {ticker} on {query_date}: {e}")
-        return 0, np.zeros(384)
+        print(f"Embedding error for {ticker} on {query_date}: {e}")
+        avg_embedding = np.zeros(384)
 
     try:
-        sentiments = sentiment_pipeline(headlines)
+        sentiments = sentiment_pipeline(flat_headlines)
         net_score = sum(r['score'] if r['label'] == 'POSITIVE' else -r['score'] for r in sentiments)
     except Exception as e:
         print(f"Sentiment error for {ticker} on {query_date}: {e}")
@@ -122,45 +133,24 @@ def main():
 
             for date in df['Date']:
                 score, avg_embedding = get_news_sentiment_and_embedding(ticker, date)
+                sentiment_scores.append(score)
 
+                # Ensure each embedding is 1D
                 avg_embedding = np.array(avg_embedding).flatten()
                 if avg_embedding.shape != (384,):
-                    print(f"\u274c BAD embedding shape for {ticker} on {date}: {avg_embedding.shape}")
+                    print(f"❌ BAD SHAPE for {ticker} on {date}: {avg_embedding.shape}")
                     avg_embedding = np.zeros(384)
 
-                sentiment_scores.append(score)
                 embeddings.append(avg_embedding)
                 time.sleep(1)
 
-            # Clean and validate sentiment scores
-            cleaned_scores = []
-            for i, s in enumerate(sentiment_scores):
-                if isinstance(s, (int, float)):
-                    cleaned_scores.append(float(s))
-                else:
-                    print(f"\u274c Invalid sentiment score at index {i}: {type(s)}, replacing with 0.0")
-                    cleaned_scores.append(0.0)
-
-            df['Sentiment_Score'] = cleaned_scores
-
-            for i, score in enumerate(cleaned_scores):
-                if isinstance(score, (list, np.ndarray)) and np.array(score).ndim != 0:
-                    print(f"\u274c STILL nested score at {i}: shape {np.array(score).shape}")
-
-            df['Sentiment_Score_3d'] = pd.Series(cleaned_scores).rolling(3).mean().values
+            df['Sentiment_Score'] = sentiment_scores
+            df['Sentiment_Score_3d'] = pd.Series(sentiment_scores).rolling(3).mean().values
             df = add_return_labels(df)
             df = add_buy_signal(df)
 
-            # Create embedding DataFrame safely
-            cleaned_embeddings = []
-            for idx, emb in enumerate(embeddings):
-                emb = np.array(emb).flatten()
-                if emb.shape != (384,):
-                    print(f"\u274c Skipping invalid embedding at index {idx}, shape {emb.shape}")
-                    emb = np.zeros(384)
-                cleaned_embeddings.append(emb)
-
-            embed_df = pd.DataFrame(cleaned_embeddings, columns=[f'Embed_{i}' for i in range(384)])
+            embeddings = np.array(embeddings)
+            embed_df = pd.DataFrame(embeddings, columns=[f'Embed_{i}' for i in range(384)])
             df = pd.concat([df.reset_index(drop=True), embed_df], axis=1)
 
             latest_buy = df[df['Buy_Signal'] == 1].tail(1)
@@ -172,13 +162,14 @@ def main():
 
     if results:
         alert_df = pd.concat(results)[['Ticker', 'Close', 'RSI', 'Gap', 'Sentiment_Score']]
-        print("Buy signals found:\n", alert_df.to_string(index=False))
+        body = alert_df.to_string(index=False)
+        send_pushover_alert("📈 Daily Swing Trade Alert", body)
 
         summary_df = pd.concat(results)[['Date', 'Ticker', 'Close', 'RSI', 'Gap', 'Sentiment_Score', 'Return_3d']]
         summary_df.sort_values(by="Sentiment_Score", ascending=False, inplace=True)
         summary_df.to_csv("swing_signals.csv", index=False)
     else:
-        print("No buy signals found.")
+        send_pushover_alert("📉 No Buy Signals Today", "No swing trades triggered today.")
 
 if __name__ == "__main__":
     main()
