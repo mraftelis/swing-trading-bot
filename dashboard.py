@@ -1,56 +1,76 @@
+import os
+import glob
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 
-st.set_page_config(page_title="Swing Trading Dashboard", layout="wide")
-st.title("📈 Daily Swing Trade Dashboard")
-st.markdown("Filter swing trading signals based on RSI, sentiment, and gap")
+st.set_page_config(layout="wide", page_title="Swing Trade Dashboard")
+st.title("📈 Swing Trade Signal Dashboard")
 
-# ---------- Load Data ----------
-@st.cache_data
-def load_data():
-    df = pd.read_csv("swing_signals.csv")
-    df["Date"] = pd.to_datetime(df["Date"])
-    return df
+# Find all *_signals.csv files
+signal_files = sorted(glob.glob("*_signals.csv"))
+if not signal_files:
+    st.warning("No signal files found. Run the pipeline first.")
+    st.stop()
 
-df = load_data()
+# Load all signal files
+all_signals = []
+for file in signal_files:
+    try:
+        df = pd.read_csv(file)
+        ticker = file.replace("_signals.csv", "").upper()
+        df['Ticker'] = ticker
+        all_signals.append(df)
+    except Exception as e:
+        st.error(f"Failed to load {file}: {e}")
 
-# ---------- Sidebar Filters ----------
-st.sidebar.header("🔎 Filter Options")
+signals_df = pd.concat(all_signals, ignore_index=True)
+signals_df['Date'] = pd.to_datetime(signals_df['Date'])
+signals_df.sort_values(by="Date", ascending=False, inplace=True)
 
-# Date selector
-available_dates = sorted(df["Date"].dt.date.unique(), reverse=True)
-selected_date = st.sidebar.selectbox("Select Date", available_dates)
+# Sidebar filter
+st.sidebar.header("🔍 Filter")
+tickers = sorted(signals_df['Ticker'].unique())
+selected = st.sidebar.multiselect("Select Tickers", tickers, default=tickers)
+filtered = signals_df[signals_df['Ticker'].isin(selected)]
 
-# RSI range
-rsi_range = st.sidebar.slider("RSI Range", 0, 100, (0, 45))
-
-# Minimum sentiment score
-min_sentiment = st.sidebar.slider("Minimum Sentiment Score", -1.0, 1.0, 0.0)
-
-# Ticker search
-ticker_search = st.sidebar.text_input("Search Ticker", "")
-
-# ---------- Apply Filters ----------
-filtered = df.copy()
-filtered = filtered[df["Date"].dt.date == selected_date]
-filtered = filtered[(filtered["RSI"] >= rsi_range[0]) & (filtered["RSI"] <= rsi_range[1])]
-filtered = filtered[filtered["Sentiment_Score"] >= min_sentiment]
-
-if ticker_search:
-    filtered = filtered[filtered["Ticker"].str.contains(ticker_search.upper(), na=False)]
-
-# ---------- Display ----------
-st.subheader(f"📊 Signals for {selected_date}")
-if not filtered.empty:
-    st.dataframe(
-        filtered[["Ticker", "Close", "RSI", "Gap", "Sentiment_Score", "Return_3d"]]
-        .sort_values(by="Sentiment_Score", ascending=False)
-        .reset_index(drop=True),
-        use_container_width=True
-    )
+# Show recent buy signals
+st.markdown("### 🧾 Recent Buy Signals")
+buy_df = filtered[filtered['Buy_Signal'] == 1].copy()
+if not buy_df.empty:
+    st.dataframe(buy_df[['Date', 'Ticker', 'Close', 'RSI', 'Sentiment_Score']], use_container_width=True)
 else:
-    st.info("No signals found for the selected filters and date.")
+    st.info("No buy signals in the selected tickers.")
 
-# ---------- Full Data Toggle ----------
-with st.expander("🔍 Preview All Signals"):
-    st.dataframe(df.sort_values(by="Date", ascending=False).reset_index(drop=True).head(100))
+st.markdown("---")
+
+# Charts per ticker
+for ticker in selected:
+    df = filtered[filtered['Ticker'] == ticker].sort_values(by="Date")
+    if df.empty:
+        continue
+
+    st.subheader(f"📊 {ticker} Signals")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fig1 = px.line(df, x="Date", y=["Close", "50_MA"], title="Price & 50-Day MA")
+        st.plotly_chart(fig1, use_container_width=True, key=f"{ticker}_chart_price_ma")
+
+    with col2:
+        fig2 = px.line(df, x="Date", y="RSI", title="RSI")
+        st.plotly_chart(fig2, use_container_width=True, key=f"{ticker}_chart_rsi")
+
+    col3, col4 = st.columns(2)
+    with col3:
+        fig3 = px.line(df, x="Date", y="Sentiment_Score", title="Sentiment Score")
+        st.plotly_chart(fig3, use_container_width=True, key=f"{ticker}_chart_sentiment")
+
+    with col4:
+        fig4 = px.scatter(
+            df[df['Buy_Signal'] == 1],
+            x="Date", y="Close",
+            color_discrete_sequence=["green"],
+            title="Buy Signals"
+        )
+        st.plotly_chart(fig4, use_container_width=True, key=f"{ticker}_chart_buy_signals")

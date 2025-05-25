@@ -8,3 +8,4 @@ python-dotenv
 requests
 streamlit
 feedparser
+plotly==6.1.1
