@@ -8,15 +8,3 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10
-
-jobs:
-  - name: run-daily-pipeline
-    type: cron
-    schedule: "30 13 * * 1-5"  # 7:30 AM CST = 13:30 UTC
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main_pipeline.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10
