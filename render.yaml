@@ -7,4 +7,4 @@ services:
     startCommand: bash -c "python main_pipeline.py && streamlit run dashboard.py --server.port $PORT"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10
+        value: 3.10.12
