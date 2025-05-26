@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: swing-trading-dashboard
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash -c "python main_pipeline.py && streamlit run dashboard.py --server.port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10
+
+cronJobs:
+  - name: run-daily-pipeline
+    schedule: "30 13 * * 1-5"  # 7:30 AM CST = 13:30 UTC
+    command: python main_pipeline.py
