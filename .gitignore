@@ -1,0 +1,32 @@
+# Ignore Python artifacts
+__pycache__/
+*.pyc
+*.bak
+
+# Ignore virtual environments
+venv*/
+env*/
+
+# Ignore backups and temp files
+*.bak
+*.DS_Store
+
+# Ignore data and cache files
+*_dataset.csv
+*_signals.csv
+*.csv
+news_cache/
+swing-bot.tar
+tests/
+
+# Ignore test/debug scripts
+test_*.py
+
+# Optional: ignore system or editor files
+.vscode/
+.idea/
+
+.env
+.env.*
+
+

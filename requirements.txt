@@ -1,0 +1,11 @@
+pandas
+yfinance
+tqdm
+transformers
+sentence-transformers
+numpy
+python-dotenv
+requests
+streamlit
+feedparser
+plotly==6.1.1
